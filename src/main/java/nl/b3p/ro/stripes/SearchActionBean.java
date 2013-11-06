@@ -14,13 +14,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package nl.b3p.ro.search;
+package nl.b3p.ro.stripes;
 
+import java.io.StringReader;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import javax.servlet.http.HttpServlet;
+import net.sourceforge.stripes.action.ActionBean;
+import net.sourceforge.stripes.action.ActionBeanContext;
+import net.sourceforge.stripes.action.Resolution;
+import net.sourceforge.stripes.action.StreamingResolution;
+import net.sourceforge.stripes.action.StrictBinding;
+import net.sourceforge.stripes.action.UrlBinding;
+import net.sourceforge.stripes.validation.Validate;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.geotools.data.DataStore;
@@ -43,21 +50,26 @@ import org.opengis.filter.PropertyIsEqualTo;
  *
  * @author Roy Braam
  */
-public class Zoeker {
-    private static final Log log = LogFactory.getLog(Zoeker.class);
+
+@UrlBinding("/action/search/{$event}")
+@StrictBinding
+public class SearchActionBean implements ActionBean{
+    private static final Log log = LogFactory.getLog(SearchActionBean.class);
     private static final String roOnlineUrl= "http://afnemers.ruimtelijkeplannen.nl/afnemers/services?REQUEST=GetCapabilities&Service=WFS";
     private static Map conProps = new HashMap();
     private static String featureType= "app:Plangebied";
     private static final FilterFactory2 ff;
+    @Validate
+    private String gemeenteCode=null;
+    
+    private ActionBeanContext context;
+    
     static{
         conProps.put("WFSDataStoreFactory:GET_CAPABILITIES_URL",roOnlineUrl);
         ff = CommonFactoryFinder.getFilterFactory2();
     }
     
-    public Zoeker (){        
-    }
-    
-    public static JSONObject zoekPlan(String gemeenteCode) throws JSONException{
+    public Resolution zoekPlan() throws JSONException{
         DataStore ds =null;
         JSONArray array = new JSONArray();
         String error = null;
@@ -66,7 +78,7 @@ public class Zoeker {
             
             ds = DataStoreFinder.getDataStore(conProps);
             FeatureSource fs = ds.getFeatureSource(featureType);
-            PropertyIsEqualTo filter = ff.equals(ff.property("overheidscode"), ff.literal(gemeenteCode));
+            PropertyIsEqualTo filter = ff.equals(ff.property("overheidscode"), ff.literal(getGemeenteCode()));
             Query q = new Query(featureType,filter, new String[]{
                 "overheidscode",
                 "geometrie",
@@ -102,14 +114,13 @@ public class Zoeker {
         }
         //tercera search
         
-        
-        
         JSONObject resultObj = new JSONObject();
         if (error!=null){
             resultObj.put("error",error);            
         }
         resultObj.put("results",array);
-        return resultObj;
+        
+        return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
     }
 
     
@@ -128,11 +139,29 @@ public class Zoeker {
     
     public static void main(String[] args) throws JSONException, ClassNotFoundException{
         Logging.ALL.setLoggerFactory("org.geotools.util.logging.Log4JLoggerFactory");
-        JSONObject obj = Zoeker.zoekPlan("0355");
-        if (obj.has("error")){
-            System.out.println("error: "+obj.getJSONArray("error"));
-        }if (obj.has("results")){
-            System.out.println("results: "+obj.getJSONArray("results").length());
-        }
+        SearchActionBean sab = new SearchActionBean();
+        sab.gemeenteCode="0355";
+        StreamingResolution sr = (StreamingResolution) sab.zoekPlan();
+        
+        System.out.println("Result: "+sr.toString());
+        
+    }
+    //<editor-fold defaultstate="collapsed" desc="Getters/Setters">
+    
+    public ActionBeanContext getContext() {
+        return context;
+    }
+    
+    public void setContext(ActionBeanContext context) {
+        this.context = context;
+    }
+
+    public String getGemeenteCode() {
+        return gemeenteCode;
+    }
+
+    public void setGemeenteCode(String gemeenteCode) {
+        this.gemeenteCode = gemeenteCode;
     }
 }
+//</editor-fold>
