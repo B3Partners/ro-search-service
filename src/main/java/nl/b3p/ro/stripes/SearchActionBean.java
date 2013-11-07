@@ -43,8 +43,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.opengis.feature.Feature;
 import org.opengis.feature.Property;
+import org.opengis.feature.type.GeometryType;
 import org.opengis.filter.FilterFactory2;
 import org.opengis.filter.PropertyIsEqualTo;
+import org.opengis.geometry.BoundingBox;
 
 /**
  *
@@ -78,7 +80,7 @@ public class SearchActionBean implements ActionBean{
             
             ds = DataStoreFinder.getDataStore(conProps);
             FeatureSource fs = ds.getFeatureSource(featureType);
-            PropertyIsEqualTo filter = ff.equals(ff.property("overheidscode"), ff.literal(getGemeenteCode()));
+            PropertyIsEqualTo filter = ff.equals(ff.property("overheidscode"), ff.literal(this.getGemeenteCode()));
             Query q = new Query(featureType,filter, new String[]{
                 "overheidscode",
                 "geometrie",
@@ -131,7 +133,18 @@ public class SearchActionBean implements ActionBean{
             Iterator<Property> it =properties.iterator();
             while (it.hasNext()){
                 Property property = it.next();
-                json.put(property.getName().getLocalPart(),property.getValue());
+                if(!(property.getType() instanceof GeometryType)){                    
+                    json.put(property.getName().getLocalPart(),property.getValue());
+                }
+            }
+            BoundingBox bb=f.getBounds();
+            if (bb!=null){
+                JSONObject bbox = new JSONObject();
+                bbox.put("minx", bb.getMinX() );
+                bbox.put("miny", bb.getMinY());
+                bbox.put("maxx", bb.getMaxX());
+                bbox.put("maxy", bb.getMaxY());
+                json.put("bbox",bbox);
             }
         }
         return json;
