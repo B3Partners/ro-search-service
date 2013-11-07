@@ -72,9 +72,33 @@ public class SearchActionBean implements ActionBean{
     }
     
     public Resolution zoekPlan() throws JSONException{
-        DataStore ds =null;
+        
         JSONArray array = new JSONArray();
-        String error = null;
+        String error;
+        
+        //ro Online
+        error=getRoOnlineFeatures(array);
+        
+        
+        //tercera search
+        
+        JSONObject resultObj = new JSONObject();
+        if (error!=null){
+            resultObj.put("error",error);            
+        }
+        resultObj.put("results",array);
+        
+        return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
+    }
+    
+    /**
+     * Gets the RO-Online features and adds them to the array.
+     * @param array 
+     * @return a error message. If null, no error occurred.
+     */
+    private String getRoOnlineFeatures(JSONArray array) {        
+        DataStore ds =null;
+        String error=null;
         //get RO-Online features ophalen
         try{
             
@@ -114,15 +138,7 @@ public class SearchActionBean implements ActionBean{
                 ds.dispose();
             }
         }
-        //tercera search
-        
-        JSONObject resultObj = new JSONObject();
-        if (error!=null){
-            resultObj.put("error",error);            
-        }
-        resultObj.put("results",array);
-        
-        return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
+        return error;
     }
 
     
