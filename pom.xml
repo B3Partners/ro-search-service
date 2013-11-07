@@ -23,6 +23,12 @@
             <type>jar</type>
         </dependency>
         <dependency>
+            <groupId>nl.b3p.ro.tercera.soap</groupId>
+            <artifactId>tercera-soap-client</artifactId>
+            <version>1.0</version>
+            <type>jar</type>
+        </dependency>
+        <dependency>
             <groupId>javax</groupId>
             <artifactId>javaee-web-api</artifactId>
             <version>6.0</version>

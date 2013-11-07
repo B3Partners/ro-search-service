@@ -16,11 +16,17 @@
  */
 package nl.b3p.ro.stripes;
 
+import com.microsoft.schemas.sql.sqlrowset1.SqlRowSet1.Row;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import javax.xml.bind.JAXBException;
+import javax.xml.transform.TransformerConfigurationException;
+import javax.xml.transform.TransformerException;
 import net.sourceforge.stripes.action.ActionBean;
 import net.sourceforge.stripes.action.ActionBeanContext;
 import net.sourceforge.stripes.action.Resolution;
@@ -28,6 +34,7 @@ import net.sourceforge.stripes.action.StreamingResolution;
 import net.sourceforge.stripes.action.StrictBinding;
 import net.sourceforge.stripes.action.UrlBinding;
 import net.sourceforge.stripes.validation.Validate;
+import nl.b3p.ro.tercera.soap.SoapClient;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.geotools.data.DataStore;
@@ -61,9 +68,12 @@ public class SearchActionBean implements ActionBean{
     private static Map conProps = new HashMap();
     private static String featureType= "app:Plangebied";
     private static final FilterFactory2 ff;
+    private static final String TERCERA = "Tercera";
+    private static final String ROONLINE = "Roonline";
     @Validate
-    private String gemeenteCode=null;
-    
+    private String overheidsCode=null;
+    @Validate
+    private Integer maxRestuls=1000;
     private ActionBeanContext context;
     
     static{
@@ -71,22 +81,47 @@ public class SearchActionBean implements ActionBean{
         ff = CommonFactoryFinder.getFilterFactory2();
     }
     
-    public Resolution zoekPlan() throws JSONException{
+    public Resolution zoekPlannen() throws JSONException{
         
-        JSONArray array = new JSONArray();
-        String error;
+        JSONObject list = new JSONObject();
+        List<String> errors = new ArrayList<String>();
         
-        //ro Online
-        error=getRoOnlineFeatures(array);
+        if (this.getOverheidsCode()==null){
+            errors.add("Geen overheidscode opgegeven.");
+        }else{
         
-        
-        //tercera search
-        
-        JSONObject resultObj = new JSONObject();
-        if (error!=null){
-            resultObj.put("error",error);            
+            //ro Online
+            String error=getRoOnlineFeatures(list);
+            if (error!=null){
+                errors.add(error);
+            }
+
+            //tercera search
+            String terceraError = getTerceraFeatures(list);
+            if (terceraError!=null){
+                errors.add(terceraError);
+            }
         }
-        resultObj.put("results",array);
+                
+        JSONObject resultObj = new JSONObject();
+        if (!errors.isEmpty()){
+            String error = null;
+            for (String e : errors){
+                if (e!=null){
+                    if (error==null){
+                        error=e;
+                    }else{
+                        error+=" "+e;
+                    }
+                }
+            }
+            if (error!=null){
+                resultObj.put("error", error);
+            }
+        }
+        
+        
+        resultObj.put("results",list);
         
         return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
     }
@@ -96,15 +131,16 @@ public class SearchActionBean implements ActionBean{
      * @param array 
      * @return a error message. If null, no error occurred.
      */
-    private String getRoOnlineFeatures(JSONArray array) {        
+    private String getRoOnlineFeatures(JSONObject list) {        
         DataStore ds =null;
         String error=null;
+        
         //get RO-Online features ophalen
         try{
             
             ds = DataStoreFinder.getDataStore(conProps);
             FeatureSource fs = ds.getFeatureSource(featureType);
-            PropertyIsEqualTo filter = ff.equals(ff.property("overheidscode"), ff.literal(this.getGemeenteCode()));
+            PropertyIsEqualTo filter = ff.equals(ff.property("overheidscode"), ff.literal(this.getOverheidsCode()));
             Query q = new Query(featureType,filter, new String[]{
                 "overheidscode",
                 "geometrie",
@@ -114,14 +150,20 @@ public class SearchActionBean implements ActionBean{
                 "typePlan",
                 "planstatus",
             });
-            
+            q.setMaxFeatures(this.maxRestuls);
             FeatureCollection fc = fs.getFeatures(q);
             FeatureIterator it = fc.features();
             try{
                 while(it.hasNext()){
                     Feature f =it.next();
-                    JSONObject jsonFeature = createJSONFeature(f);
-                    array.put(jsonFeature);
+                    String id = (String) f.getProperty("identificatie").getValue();
+                    if (!list.has(id)){
+                        JSONObject jsonFeature = createJSONFeature(f);
+                        list.put(id,jsonFeature);
+                        if (list.length() >= this.maxRestuls){
+                            break;
+                        }
+                    }
                 }
             }finally{
                 it.close();                
@@ -140,11 +182,67 @@ public class SearchActionBean implements ActionBean{
         }
         return error;
     }
-
     
+    private String getTerceraFeatures(JSONObject list){
+        String username = this.getContext().getServletContext().getInitParameter("TerceraSOAPUsername");
+        String password = this.getContext().getServletContext().getInitParameter("TerceraSOAPPassword");
+        
+        String error=null;
+        if (username==null || password ==null){
+            error="Unable to load Tercera service. Cause:'TerceraSOAPUsername' and/or 'TerceraSOAPPassword' "
+                    + "not configured in the Tomcat server. Add both param's to a context in the CATALINA_BASE/conf dir."
+                    + "See: https://github.com/B3Partners/ro-search-service";
+        }
+        try{
+            error=searchTerceraService(list,username,password);
+        }catch(Exception e){
+            error=e.getLocalizedMessage();
+            log.error("Error while getting tercera plans",e);
+        }
+        
+        return error;
+    }
+    private String searchTerceraService(JSONObject list,String username,String password) throws JAXBException, TransformerConfigurationException, TransformerException{
+        if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.length()>= this.getMaxRestuls()) {
+            return null;
+        }
+        String error="";        
+        SoapClient client = new SoapClient(username,password);
+        List<Row> rows = client.getPlannen();       
+        
+        if (rows != null) {
+            for (Row row : rows) {
+                if (this.getOverheidsCode().equals(row.getOverheidscode())){                    
+                    try{
+                        String id = row.getIdentificatie();
+                        if(!list.has(id)){
+                            JSONObject obj = createJSONFeature(row);                              
+                            list.put(id,obj);
+                        }
+                    }catch(JSONException je){
+                        error+=je.getLocalizedMessage();
+                    }                    
+                    if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.length() >= this.getMaxRestuls()) {
+                        break;
+                    }
+                }
+            }
+        }
+        if (error.length()==0){
+            error=null;
+        }
+        return error;
+    }
+    /**
+     * Create a json feature from a GeoTools feature
+     * @param f the geotools feature
+     * @return a json object representing the feature
+     * @throws JSONException 
+     */    
     private static JSONObject createJSONFeature(Feature f) throws JSONException {
         JSONObject json = new JSONObject();
-        if (f!=null){
+        if (f!=null){            
+            json.put("origin",ROONLINE);
             Collection<Property> properties= f.getProperties();
             Iterator<Property> it =properties.iterator();
             while (it.hasNext()){
@@ -166,11 +264,42 @@ public class SearchActionBean implements ActionBean{
         return json;
     }
     
+    private static JSONObject createJSONFeature(Row r) throws JSONException {
+        JSONObject json = new JSONObject();
+        if (r !=null){
+            json.put("origin",TERCERA);
+            json.put("overheidscode",r.getOverheidscode());            
+            json.put("naam",r.getNaam());
+            json.put("identificatie",r.getIdentificatie());
+            json.put("verwijzingNaarTekst",r.getVerwijzingnaartekst());
+            json.put("typePlan",r.getTypePlan());
+            json.put("planstatus",r.getPlanstatus());
+            if (r.getBbox()!=null){
+                JSONObject bbox = new JSONObject();
+                String[] tokens = r.getBbox().split(" ");
+                if (tokens.length==4){
+                    try{
+                        bbox.put("minx", Double.parseDouble(tokens[0]));
+                        bbox.put("miny", Double.parseDouble(tokens[1]));
+                        bbox.put("maxx", Double.parseDouble(tokens[2]));
+                        bbox.put("maxy",Double.parseDouble(tokens[3]));
+                        json.put("bbox",bbox);
+                    }catch(NumberFormatException nfe){ 
+                        log.error("Can't set bbox for tercera feature with identification: "
+                                +r.getIdentificatie(),nfe);
+                    }                                        
+                }
+            }
+            
+        }
+        return json;
+    }
+    
     public static void main(String[] args) throws JSONException, ClassNotFoundException{
         Logging.ALL.setLoggerFactory("org.geotools.util.logging.Log4JLoggerFactory");
         SearchActionBean sab = new SearchActionBean();
-        sab.gemeenteCode="0355";
-        StreamingResolution sr = (StreamingResolution) sab.zoekPlan();
+        sab.overheidsCode="0355";
+        StreamingResolution sr = (StreamingResolution) sab.zoekPlannen();
         
         System.out.println("Result: "+sr.toString());
         
@@ -185,12 +314,20 @@ public class SearchActionBean implements ActionBean{
         this.context = context;
     }
 
-    public String getGemeenteCode() {
-        return gemeenteCode;
+    public String getOverheidsCode() {
+        return overheidsCode;
     }
 
-    public void setGemeenteCode(String gemeenteCode) {
-        this.gemeenteCode = gemeenteCode;
+    public void setOverheidsCode(String overheidsCode) {
+        this.overheidsCode = overheidsCode;
+    }
+
+    public Integer getMaxRestuls() {
+        return maxRestuls;
+    }
+
+    public void setMaxRestuls(Integer maxRestuls) {
+        this.maxRestuls = maxRestuls;
     }
 }
 //</editor-fold>
