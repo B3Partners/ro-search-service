@@ -184,50 +184,48 @@ public class SearchActionBean implements ActionBean{
     }
     
     private String getTerceraFeatures(JSONObject list){
-        String username = this.getContext().getServletContext().getInitParameter("TerceraSOAPUsername");
-        String password = this.getContext().getServletContext().getInitParameter("TerceraSOAPPassword");
+        String sOAPUsername = this.getContext().getServletContext().getInitParameter("TerceraSOAPUsername");
+        String sOAPPassword = this.getContext().getServletContext().getInitParameter("TerceraSOAPPassword");
         
-        String error=null;
-        if (username==null || password ==null){
+        String error="";
+        if (sOAPUsername==null || sOAPPassword ==null){
             error="Unable to load Tercera service. Cause:'TerceraSOAPUsername' and/or 'TerceraSOAPPassword' "
                     + "not configured in the Tomcat server. Add both param's to a context in the CATALINA_BASE/conf dir."
                     + "See: https://github.com/B3Partners/ro-search-service";
         }
         try{
-            error=searchTerceraService(list,username,password);
-        }catch(Exception e){
-            error=e.getLocalizedMessage();
-            log.error("Error while getting tercera plans",e);
-        }
-        
-        return error;
-    }
-    private String searchTerceraService(JSONObject list,String username,String password) throws JAXBException, TransformerConfigurationException, TransformerException{
-        if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.length()>= this.getMaxRestuls()) {
-            return null;
-        }
-        String error="";        
-        SoapClient client = new SoapClient(username,password);
-        List<Row> rows = client.getPlannen();       
-        
-        if (rows != null) {
-            for (Row row : rows) {
-                if (this.getOverheidsCode().equals(row.getOverheidscode())){                    
-                    try{
-                        String id = row.getIdentificatie();
-                        if(!list.has(id)){
-                            JSONObject obj = createJSONFeature(row);                              
-                            list.put(id,obj);
+            SoapClient client = new SoapClient(sOAPUsername,sOAPPassword);
+            List<Row> rows = client.getPlannen();   
+            //is logged in? Get private plans.
+            if (context.getRequest().getUserPrincipal()!=null){
+                String username=context.getRequest().getUserPrincipal().getName();
+                List<Row> privateRows = client.getUserPlannen(username);
+                if (privateRows!=null){
+                    rows.addAll(privateRows);
+                }
+            }
+            if (rows != null) {
+                for (Row row : rows) {
+                    if (this.getOverheidsCode().equals(row.getOverheidscode())){                    
+                        try{
+                            String id = row.getIdentificatie();
+                            if(!list.has(id)){
+                                JSONObject obj = createJSONFeature(row);                              
+                                list.put(id,obj);
+                            }
+                        }catch(JSONException je){
+                            error+=je.getLocalizedMessage();
+                        }                    
+                        if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.length() >= this.getMaxRestuls()) {
+                            break;
                         }
-                    }catch(JSONException je){
-                        error+=je.getLocalizedMessage();
-                    }                    
-                    if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.length() >= this.getMaxRestuls()) {
-                        break;
                     }
                 }
             }
-        }
+        }catch(Exception e){
+            error=e.getLocalizedMessage();
+            log.error("Error while getting tercera plans",e);
+        }        
         if (error.length()==0){
             error=null;
         }
