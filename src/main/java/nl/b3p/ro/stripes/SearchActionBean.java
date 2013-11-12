@@ -82,8 +82,9 @@ public class SearchActionBean implements ActionBean{
     }
     
     public Resolution zoekPlannen() throws JSONException{
-        
+        JSONObject resultObj = new JSONObject();
         JSONObject list = new JSONObject();
+        resultObj.put("success",false);
         List<String> errors = new ArrayList<String>();
         
         if (this.getOverheidsCode()==null){
@@ -102,8 +103,7 @@ public class SearchActionBean implements ActionBean{
                 errors.add(terceraError);
             }
         }
-                
-        JSONObject resultObj = new JSONObject();
+              
         if (!errors.isEmpty()){
             String error = null;
             for (String e : errors){
@@ -119,10 +119,8 @@ public class SearchActionBean implements ActionBean{
                 resultObj.put("error", error);
             }
         }
-        
-        
         resultObj.put("results",list);
-        
+        resultObj.put("success",true);
         return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
     }
     
