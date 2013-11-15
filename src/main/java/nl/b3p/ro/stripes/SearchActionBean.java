@@ -17,7 +17,10 @@
 package nl.b3p.ro.stripes;
 
 import com.microsoft.schemas.sql.sqlrowset1.SqlRowSet1.Row;
+import java.io.IOException;
 import java.io.StringReader;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -29,6 +32,7 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
 import net.sourceforge.stripes.action.ActionBean;
 import net.sourceforge.stripes.action.ActionBeanContext;
+import net.sourceforge.stripes.action.DefaultHandler;
 import net.sourceforge.stripes.action.Resolution;
 import net.sourceforge.stripes.action.StreamingResolution;
 import net.sourceforge.stripes.action.StrictBinding;
@@ -41,9 +45,13 @@ import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.FeatureSource;
 import org.geotools.data.Query;
+import org.geotools.data.ows.Layer;
+import org.geotools.data.wms.WMSUtils;
+import org.geotools.data.wms.WebMapServer;
 import org.geotools.factory.CommonFactoryFinder;
 import org.geotools.feature.FeatureCollection;
 import org.geotools.feature.FeatureIterator;
+import org.geotools.ows.ServiceException;
 import org.geotools.util.logging.Logging;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -74,13 +82,15 @@ public class SearchActionBean implements ActionBean{
     private String overheidsCode=null;
     @Validate
     private Integer maxRestuls=1000;
+    @Validate
+    private String wmsUrl=null;
     private ActionBeanContext context;
     
     static{
         conProps.put("WFSDataStoreFactory:GET_CAPABILITIES_URL",roOnlineUrl);
         ff = CommonFactoryFinder.getFilterFactory2();
     }
-    
+    @DefaultHandler
     public Resolution zoekPlannen() throws JSONException{
         JSONObject resultObj = new JSONObject();
         JSONObject list = new JSONObject();
@@ -124,6 +134,44 @@ public class SearchActionBean implements ActionBean{
         return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
     }
     
+    public Resolution getTerceraWMSLayers(){
+        JSONObject result = new JSONObject();
+        JSONArray layers = new JSONArray();
+        String error=null;
+        Boolean success=false;
+        try{
+            if (wmsUrl!=null){
+                List layerNames= getLayerNames(wmsUrl);
+                Iterator<String> it=layerNames.iterator();
+                while(it.hasNext()){
+                    String s=it.next();
+                    /*Remove the layer if there are more then one  "-" in the name
+                      or if NLIMRO is in the name (top layer)
+                     */
+                    if (s.indexOf("NLIMRO") < 0 && (s.indexOf("-") < 0 || s.indexOf("-")==s.lastIndexOf("-"))){
+                        layers.put(s);
+                    }
+                }
+                success=true;
+            }else{
+                error = "No wms service url given.";
+            }
+            
+            result.put("layers",layers);
+        }catch(JSONException jse){
+            success=false;
+            log.error("Error while creating list of Layers for tercera service", jse);
+        }
+        try{
+            if (error!=null){
+                    result.put("error", error);
+            }        
+            result.put("success",success);
+        }catch(JSONException jse){
+            log.error("Error while setting error and/or success in JSON result");
+        }
+        return new StreamingResolution("application/json",new StringReader(result.toString()));  
+    }
     /**
      * Gets the RO-Online features and adds them to the array.
      * @param array 
@@ -270,6 +318,9 @@ public class SearchActionBean implements ActionBean{
             json.put("verwijzingNaarTekst",r.getVerwijzingnaartekst());
             json.put("typePlan",r.getTypePlan());
             json.put("planstatus",r.getPlanstatus());
+            if (r.getWmsrequest()!=null){
+                json.put("wms",r.getWmsrequest());
+            }
             if (r.getBbox()!=null){
                 JSONObject bbox = new JSONObject();
                 String[] tokens = r.getBbox().split(" ");
@@ -289,6 +340,28 @@ public class SearchActionBean implements ActionBean{
             
         }
         return json;
+    }
+    
+    private Layer[] getLayers(String url) throws URISyntaxException, IOException, ServiceException{
+        URI uri = new URI(url);   
+        
+        WebMapServer wms = new WebMapServer(uri.toURL(),30000);
+        Layer[] layers=WMSUtils.getNamedLayers(wms.getCapabilities());        
+        return layers;
+    }
+    
+    private List<String> getLayerNames(String url){        
+        ArrayList<String> result = new ArrayList<String>();
+        try{
+            //url= url.replace("\\", "%5C");
+            Layer[] layers=getLayers(url);            
+            for (int i=0; i < layers.length; i++){
+                result.add(layers[i].getName());
+            }
+        }catch(Exception e){
+            log.error("Error when loading layers: ",e);
+        }
+        return result;
     }
     
     public static void main(String[] args) throws JSONException, ClassNotFoundException{
@@ -324,6 +397,14 @@ public class SearchActionBean implements ActionBean{
 
     public void setMaxRestuls(Integer maxRestuls) {
         this.maxRestuls = maxRestuls;
+    }
+
+    public String getWmsUrl() {
+        return wmsUrl;
+    }
+
+    public void setWmsUrl(String wmsUrl) {
+        this.wmsUrl = wmsUrl;
     }
 }
 //</editor-fold>
