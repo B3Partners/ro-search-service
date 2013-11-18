@@ -5,9 +5,12 @@
 <html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-        <title>JSP Page</title>
+        <title>RO-search-service</title>
     </head>
     <body>
-        <h1>Hello World!</h1>
+        <h1>RO-search-service</h1>
+        Doorzoekt RO-online en Tercera services. Zie 
+        <a href="https://github.com/B3Partners/ro-search-service">https://github.com/B3Partners/ro-search-service</a> 
+        voor meer info.
     </body>
 </html>
