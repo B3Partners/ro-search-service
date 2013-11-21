@@ -148,7 +148,8 @@ public class SearchActionBean implements ActionBean{
                     /*Remove the layer if there are more then one  "-" in the name
                       or if NLIMRO is in the name (top layer)
                      */
-                    if (s.indexOf("NLIMRO") < 0 && (s.indexOf("-") < 0 || s.indexOf("-")==s.lastIndexOf("-"))){
+                    if ((s.indexOf("NLIMRO") < 0 && (s.indexOf("-") < 0 || s.indexOf("-")==s.lastIndexOf("-"))) && 
+                            s.indexOf("_")!=1){
                         layers.put(s);
                     }
                 }
