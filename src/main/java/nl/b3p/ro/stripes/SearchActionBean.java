@@ -23,13 +23,14 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import javax.xml.bind.JAXBException;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.TransformerException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import net.sourceforge.stripes.action.ActionBean;
 import net.sourceforge.stripes.action.ActionBeanContext;
 import net.sourceforge.stripes.action.DefaultHandler;
@@ -93,7 +94,7 @@ public class SearchActionBean implements ActionBean{
     @DefaultHandler
     public Resolution zoekPlannen() throws JSONException{
         JSONObject resultObj = new JSONObject();
-        JSONObject list = new JSONObject();
+        HashMap list = new HashMap();
         resultObj.put("success",false);
         List<String> errors = new ArrayList<String>();
         
@@ -129,7 +130,30 @@ public class SearchActionBean implements ActionBean{
                 resultObj.put("error", error);
             }
         }
-        resultObj.put("results",list);
+        List<JSONObject> plans= new ArrayList<JSONObject>(list.values());
+        Collections.sort(plans, new Comparator<JSONObject>() {
+
+            @Override
+            public int compare(JSONObject o1, JSONObject o2) {
+                int value=0;
+                if (o1.has("naam")){
+                    if (o2.has("naam")){
+                        try {
+                            value= o1.getString("naam").compareToIgnoreCase(o2.getString("naam"));
+                        } catch (JSONException ex) {
+                            value = 0;
+                        }
+                    }else{
+                        value = 1;
+                    }
+                }else{
+                    value = -1;
+                }
+                return value;
+            }
+        });
+        JSONArray array = new JSONArray(plans);
+        resultObj.put("results",array);
         resultObj.put("success",true);
         return new StreamingResolution("application/json",new StringReader(resultObj.toString()));        
     }
@@ -178,7 +202,7 @@ public class SearchActionBean implements ActionBean{
      * @param array 
      * @return a error message. If null, no error occurred.
      */
-    private String getRoOnlineFeatures(JSONObject list) {        
+    private String getRoOnlineFeatures(HashMap list) {        
         DataStore ds =null;
         String error=null;
         
@@ -204,10 +228,10 @@ public class SearchActionBean implements ActionBean{
                 while(it.hasNext()){
                     Feature f =it.next();
                     String id = (String) f.getProperty("identificatie").getValue();
-                    if (!list.has(id)){
+                    if (list.get(id)==null){
                         JSONObject jsonFeature = createJSONFeature(f);
                         list.put(id,jsonFeature);
-                        if (list.length() >= this.maxRestuls){
+                        if (list.size() >= this.maxRestuls){
                             break;
                         }
                     }
@@ -230,7 +254,7 @@ public class SearchActionBean implements ActionBean{
         return error;
     }
     
-    private String getTerceraFeatures(JSONObject list){
+    private String getTerceraFeatures(HashMap list){
         String sOAPUsername = this.getContext().getServletContext().getInitParameter("TerceraSOAPUsername");
         String sOAPPassword = this.getContext().getServletContext().getInitParameter("TerceraSOAPPassword");
         
@@ -256,14 +280,14 @@ public class SearchActionBean implements ActionBean{
                     if (this.getOverheidsCode().equals(row.getOverheidscode())){                    
                         try{
                             String id = row.getIdentificatie();
-                            if(!list.has(id)){
+                            if(list.get(id)==null){
                                 JSONObject obj = createJSONFeature(row);                              
                                 list.put(id,obj);
                             }
                         }catch(JSONException je){
                             error+=je.getLocalizedMessage();
                         }                    
-                        if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.length() >= this.getMaxRestuls()) {
+                        if (this.getMaxRestuls() != null && this.getMaxRestuls() > 0 && list.size() >= this.getMaxRestuls()) {
                             break;
                         }
                     }
