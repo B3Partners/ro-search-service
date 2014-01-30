@@ -297,7 +297,7 @@ public class SearchActionBean implements ActionBean{
             error=e.getLocalizedMessage();
             log.error("Error while getting tercera plans",e);
         }        
-        if (error.length()==0){
+        if (error!=null && error.length()==0){
             error=null;
         }
         return error;
