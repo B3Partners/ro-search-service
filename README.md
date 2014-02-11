@@ -13,3 +13,7 @@ For example:
   <Parameter name="TerceraSOAPPassword" override="false" value="Password"/>
 </Context>
 ```
+
+Build:
+First build the tercera-soap-client so it's in your mvn repo:
+https://github.com/B3Partners/tercera-soap-client
